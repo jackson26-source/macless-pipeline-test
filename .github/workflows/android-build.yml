@@ -197,9 +197,8 @@ jobs:
           SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
           SDKMANAGER="$(command -v sdkmanager || true)"
-          if [ -z "$SDKMANAGER" ] && [ -n "$SDK_ROOT" ]; then
-            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" "$SDK_ROOT/tools/bin" \\
-              -name sdkmanager -type f 2>/dev/null | sort | tail -n 1)"
+          if [ -z "$SDKMANAGER" ] && [ -d "$SDK_ROOT/cmdline-tools" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort | tail -n 1)"
           fi
 
           if [ -z "$SDKMANAGER" ]; then
@@ -214,8 +213,7 @@ jobs:
           # the platform does, so a combined install can fail on a package
           # that simply doesn't exist yet. Fall back to the platform alone,
           # which is the part Gradle actually needs to compile against.
-          "$SDKMANAGER" "platforms;android-${TARGET_SDK}" "build-tools;${TARGET_SDK}.0.0" \\
-            || "$SDKMANAGER" "platforms;android-${TARGET_SDK}"
+          "$SDKMANAGER" "platforms;android-${TARGET_SDK}" "build-tools;${TARGET_SDK}.0.0" || "$SDKMANAGER" "platforms;android-${TARGET_SDK}"
 
       - name: Build unsigned release AAB
         run: |
