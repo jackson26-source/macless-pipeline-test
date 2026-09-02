@@ -178,17 +178,44 @@ jobs:
           fi
           echo "::notice::Building versionCode ${VERSION_CODE}."
 
-      - name: Accept Android SDK licenses
-        run: yes | sdkmanager --licenses > /dev/null || true
-
-      # The runner image ships a handful of platforms, but not always the one
-      # Play requires the week Google raises the floor. Installing it is a
-      # no-op when it's already there.
-      - name: Install the target SDK platform
+      # ---- sdkmanager is NOT on PATH on GitHub's Ubuntu runners — it lives
+      # under $ANDROID_SDK_ROOT/cmdline-tools/<version>/bin. The line that
+      # used to be here, `yes | sdkmanager --licenses > /dev/null || true`,
+      # was therefore a silent no-op on every run that has ever executed:
+      # bare `sdkmanager` exits 127 (command not found) and the `|| true`
+      # swallowed it, so the step reported success while doing nothing.
+      # Verified directly, 2026-09-02.
+      #
+      # The runner image also ships only a few SDK platforms, and not
+      # necessarily the one Play requires the week Google raises the floor,
+      # so the platform is installed explicitly. Both are no-ops when
+      # already satisfied.
+      - name: Accept licenses and install the SDK platform Play requires
         env:
           TARGET_SDK: ${{ vars.ANDROID_TARGET_SDK || '36' }}
-        run: sdkmanager "platforms;android-${TARGET_SDK}" > /dev/null
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
 
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -n "$SDK_ROOT" ]; then
+            SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" "$SDK_ROOT/tools/bin" \\
+              -name sdkmanager -type f 2>/dev/null | sort | tail -n 1)"
+          fi
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "::warning::sdkmanager not found under ${SDK_ROOT:-<no ANDROID_SDK_ROOT>}. Skipping the explicit install — the Android Gradle plugin will try to fetch API ${TARGET_SDK} itself. If the build fails with 'Failed to install the following SDK components', this is why."
+            exit 0
+          fi
+
+          echo "Using $SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+
+          # build-tools for a brand-new API level sometimes lands weeks after
+          # the platform does, so a combined install can fail on a package
+          # that simply doesn't exist yet. Fall back to the platform alone,
+          # which is the part Gradle actually needs to compile against.
+          "$SDKMANAGER" "platforms;android-${TARGET_SDK}" "build-tools;${TARGET_SDK}.0.0" \\
+            || "$SDKMANAGER" "platforms;android-${TARGET_SDK}"
 
       - name: Build unsigned release AAB
         run: |
